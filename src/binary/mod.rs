@@ -21,6 +21,10 @@ use x86_64::{
 /// Provides BIOS-specific types and trait implementations.
 #[cfg(feature = "bios_bin")]
 pub mod bios;
+#[cfg(feature = "bios_bin")]
+extern "C" {
+    fn _smp_trampoline() -> !;
+}
 /// Provides UEFI-specific trait implementations.
 #[cfg(feature = "uefi_bin")]
 mod uefi;
@@ -66,6 +70,7 @@ pub struct SystemInfo {
     pub framebuffer_info: FrameBufferInfo,
     /// Address of the _Root System Description Pointer_ structure of the ACPI standard.
     pub rsdp_addr: Option<PhysAddr>,
+
 }
 
 /// Loads the kernel ELF executable into memory and switches to it.
@@ -327,6 +332,8 @@ where
         version_patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
         pre_release: !env!("CARGO_PKG_VERSION_PRE").is_empty(),
         memory_regions: memory_regions.into(),
+        #[cfg(feature = "bios_bin")]
+        smp_trampoline: _smp_trampoline,
         framebuffer: mappings
             .framebuffer
             .map(|addr| FrameBuffer {
