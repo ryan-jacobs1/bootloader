@@ -53,6 +53,7 @@ mod frame_allocator;
 mod level4_entries;
 mod page_table;
 mod printer;
+mod rsd;
 #[cfg(feature = "sse")]
 mod sse;
 
