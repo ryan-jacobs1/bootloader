@@ -6,3 +6,11 @@ edition = "2018"
 
 [dependencies]
 x86_64 = "0.11.0"
+bootloader = { path = ".."}
+
+[package.metadata.bootimage]
+# The cargo subcommand that will be used for building the kernel.
+#
+# For building using the `cargo-xbuild` crate, set this to `xbuild`.
+build-command = ["xbuild"]
+

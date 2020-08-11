@@ -11,7 +11,7 @@ trampoline_gdt:
     
     .quad 0
 
-; __KERNEL_CS
+# __KERNEL_CS
 	.word 0xFFFF
 	.word 0
 	.byte 0
@@ -19,7 +19,7 @@ trampoline_gdt:
 	.byte 0b11001111
 	.byte 0
 
-	; __KNLUSR_DS
+	# __KNLUSR_DS
 	.word 0xFFFF
 	.word 0
 	.byte 0

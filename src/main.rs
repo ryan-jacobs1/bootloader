@@ -12,6 +12,7 @@ extern crate rlibc;
 use bootloader::bootinfo::{BootInfo, FrameRange};
 use core::convert::TryInto;
 use core::panic::PanicInfo;
+use core::fmt::Write;
 use core::{mem, slice};
 use fixedvec::alloc_stack;
 use usize_conversions::usize_from;
@@ -133,6 +134,8 @@ fn bootloader_main(
     use xmas_elf::program::{ProgramHeader, ProgramHeader64};
 
     printer::Printer.clear_screen();
+
+    
 
     let mut memory_map = boot_info::create_from(memory_map_addr, memory_map_entry_count);
 
@@ -269,6 +272,8 @@ fn bootloader_main(
         page
     };
 
+    
+
     // If no kernel stack address is provided, map the kernel stack after the boot info page
     let kernel_stack_address = match KERNEL_STACK_ADDRESS {
         Some(addr) => Page::containing_address(VirtAddr::new(addr)),
@@ -299,6 +304,8 @@ fn bootloader_main(
             .as_u64()
         });
 
+        
+
         let virt_for_phys =
             |phys: PhysAddr| -> VirtAddr { VirtAddr::new(phys.as_u64() + physical_memory_offset) };
 
@@ -325,6 +332,11 @@ fn bootloader_main(
     } else {
         0 // Value is unused by BootInfo::new, so this doesn't matter
     };
+
+    //write!(&mut printer::Printer, "searching for rsd...");
+        let rsd = rsd::find_rsd();
+        // write!(&mut printer::Printer, "found rsd!");
+        loop {}
 
     // Construct boot info structure.
     let mut boot_info = BootInfo::new(

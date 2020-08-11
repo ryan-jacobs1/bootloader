@@ -1,4 +1,3 @@
-
 #[repr(C, packed)]
 pub struct RSD {
     signature: [u8; 8],
@@ -24,8 +23,8 @@ struct SDT {
 pub(crate) unsafe fn find_rsd_in_range(start: u32, end: u32) -> Option<*const RSD> {
     for i in (start..end).step_by(16) {
         let rsd = i as *const RSD;
-        let sig = String::from_utf8_lossy(rsd.signature);
-        if sig == "RSD PTR " {
+        let sig: &[u8] = &((*rsd).signature);
+        if sig == "RSD PTR ".as_bytes() {
             return Some(rsd)
         }
     }
