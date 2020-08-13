@@ -11,8 +11,8 @@ extern crate rlibc;
 
 use bootloader::bootinfo::{BootInfo, FrameRange};
 use core::convert::TryInto;
-use core::panic::PanicInfo;
 use core::fmt::Write;
+use core::panic::PanicInfo;
 use core::{mem, slice};
 use fixedvec::alloc_stack;
 use usize_conversions::usize_from;
@@ -135,7 +135,7 @@ fn bootloader_main(
 
     printer::Printer.clear_screen();
 
-    
+
 
     let mut memory_map = boot_info::create_from(memory_map_addr, memory_map_entry_count);
 
@@ -272,7 +272,7 @@ fn bootloader_main(
         page
     };
 
-    
+
 
     // If no kernel stack address is provided, map the kernel stack after the boot info page
     let kernel_stack_address = match KERNEL_STACK_ADDRESS {
@@ -291,7 +291,7 @@ fn bootloader_main(
     )
     .expect("kernel mapping failed");
 
-    let physical_memory_offset = if cfg!(feature = "map_physical_memory") {
+    let physical_memory_offset = {
         let physical_memory_offset = PHYSICAL_MEMORY_OFFSET.unwrap_or_else(|| {
             // If offset not manually provided, find a free p4 entry and map memory here.
             // One level 4 entry spans 2^48/512 bytes (over 500gib) so this should suffice.
@@ -304,13 +304,17 @@ fn bootloader_main(
             .as_u64()
         });
 
-        
+
 
         let virt_for_phys =
             |phys: PhysAddr| -> VirtAddr { VirtAddr::new(phys.as_u64() + physical_memory_offset) };
 
         let start_frame = PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(0));
-        let end_frame = PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(max_phys_addr));
+        let end_frame = if cfg!(feature = "map_physical_memory") {
+            PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(max_phys_addr))
+        } else {
+            PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(0x200000))
+        };
 
         for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
             let page = Page::containing_address(virt_for_phys(frame.start_address()));
@@ -328,15 +332,15 @@ fn bootloader_main(
             .flush();
         }
 
-        physical_memory_offset
-    } else {
-        0 // Value is unused by BootInfo::new, so this doesn't matter
-    };
-
-    //write!(&mut printer::Printer, "searching for rsd...");
-        let rsd = rsd::find_rsd();
+        writeln!(&mut printer::Printer, "searching for rsd...");
+        let rsd = rsd::find_rsd(physical_memory_offset);
         // write!(&mut printer::Printer, "found rsd!");
         loop {}
+
+        physical_memory_offset
+    };
+
+
 
     // Construct boot info structure.
     let mut boot_info = BootInfo::new(
@@ -350,7 +354,9 @@ fn bootloader_main(
 
     // Write boot info to boot info page.
     let boot_info_addr = boot_info_page.start_address();
-    unsafe { boot_info_addr.as_mut_ptr::<BootInfo>().write(boot_info) };
+    unsafe {
+        boot_info_addr.as_mut_ptr::<BootInfo>().write(boot_info)
+    };
 
     // Make sure that the kernel respects the write-protection bits, even when in ring 0.
     enable_write_protect_bit();
@@ -371,7 +377,9 @@ fn bootloader_main(
     sse::enable_sse();
 
     let entry_point = VirtAddr::new(entry_point);
-    unsafe { context_switch(boot_info_addr, entry_point, kernel_memory_info.stack_end) };
+    unsafe {
+        context_switch(boot_info_addr, entry_point, kernel_memory_info.stack_end)
+    };
 }
 
 fn enable_nxe_bit() {
@@ -381,7 +389,9 @@ fn enable_nxe_bit() {
 
 fn enable_write_protect_bit() {
     use x86_64::registers::control::{Cr0, Cr0Flags};
-    unsafe { Cr0::update(|cr0| *cr0 |= Cr0Flags::WRITE_PROTECT) };
+    unsafe {
+        Cr0::update(|cr0| *cr0 |= Cr0Flags::WRITE_PROTECT)
+    };
 }
 
 #[panic_handler]
