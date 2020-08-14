@@ -310,11 +310,7 @@ fn bootloader_main(
             |phys: PhysAddr| -> VirtAddr { VirtAddr::new(phys.as_u64() + physical_memory_offset) };
 
         let start_frame = PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(0));
-        let end_frame = if cfg!(feature = "map_physical_memory") {
-            PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(max_phys_addr))
-        } else {
-            PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(0x200000))
-        };
+        let end_frame = PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(max_phys_addr));
 
         for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
             let page = Page::containing_address(virt_for_phys(frame.start_address()));
@@ -332,9 +328,7 @@ fn bootloader_main(
             .flush();
         }
 
-        writeln!(&mut printer::Printer, "searching for rsd...");
-        let rsd = rsd::find_rsd(physical_memory_offset);
-        // write!(&mut printer::Printer, "found rsd!");
+        unsafe {rsd::init(physical_memory_offset);}
         loop {}
 
         physical_memory_offset
