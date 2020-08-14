@@ -33,11 +33,98 @@ pub struct ACPISDTHeader {
 }
 
 #[derive(Debug)]
+pub struct MADTIter<'a> {
+    madt: &'a MADT,
+    pos: usize,
+    bytes_remaining: usize,
+    curr_addr: usize
+}
+
+impl<'a> MADTIter<'a> {
+    pub fn new(madt: &'a MADT) -> Self {
+        MADTIter {
+            madt: madt,
+            pos: 0,
+            bytes_remaining: madt.header.length as usize - core::mem::size_of::<MADT>(),
+            curr_addr: madt.entry_start()
+        }
+    }
+}
+
+impl<'a> Iterator for MADTIter<'a>   {
+    type Item = MADTEntry<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.bytes_remaining <= 0 {
+            return None
+        }
+        let mut curr = self.curr_addr as *const MADTEntryHeader;
+        unsafe {
+            self.bytes_remaining -= (*curr).len as usize;
+            write!(&mut printer::Printer, "bytes remaining: {}", self.bytes_remaining);
+            self.curr_addr += (*curr).len as usize;
+            let typ = (*curr).typ;
+            match typ {
+                0 => Some(MADTEntry::APICEntry(&*(curr as *const APICEntry))),
+                1 => Some(MADTEntry::IOAPICEntry(&*(curr as *const IOAPICEntry))),
+                2 | 4 | 5 => Some(MADTEntry::OtherEntry(typ)),
+                _ => panic!("unknown MADT entry {}", (typ)),
+
+            }
+        }
+
+    }
+}
+
+#[derive(Debug)]
 #[repr(C, packed)]
 pub struct MADT {
     header: ACPISDTHeader,
     local_addr: u32,
     flags: u32,
+}
+
+impl MADT {
+    pub unsafe fn iter(&self) -> MADTIter {
+        MADTIter::new(&self)
+    }
+
+    pub fn entry_start(&self) -> usize {
+        self as *const MADT as usize + core::mem::size_of::<MADT>()
+    }
+}
+
+#[derive(Debug)]
+pub enum MADTEntry<'a> {
+    APICEntry(&'a APICEntry),
+    IOAPICEntry(&'a IOAPICEntry),
+    OtherEntry(u8),
+}
+
+#[derive(Debug)]
+#[repr(C, packed)]
+pub struct MADTEntryHeader {
+    typ: u8,
+    len: u8
+}
+
+#[derive(Debug)]
+#[repr(C, packed)]
+pub struct APICEntry {
+    header: MADTEntryHeader,
+    processor_id: u8,
+    apic_id: u8,
+    flags: u32
+}
+
+#[derive(Debug)]
+#[repr(C, packed)]
+pub struct IOAPICEntry {
+    header: MADTEntryHeader,
+    apic_id: u8,
+    reserved: u8,
+    address: u32,
+    base: u32,
 }
 
 pub(crate) unsafe fn init(phys_mem_offset: u64) {
@@ -50,6 +137,11 @@ pub(crate) unsafe fn init(phys_mem_offset: u64) {
         None => panic!("no madt found")
     };
     writeln!(&mut printer::Printer, "lapic addr: {:x}", (*madt).local_addr);
+    for entry in (*madt).iter() {
+        write!(&mut printer::Printer, "apic entry: {:?}", entry);
+    }
+    
+
     
 }
 
