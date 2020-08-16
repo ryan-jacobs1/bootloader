@@ -1,7 +1,11 @@
 use core::fmt::Write;
 use crate::printer;
 
-#[derive(Debug)]
+use x86_64::{PhysAddr};
+use fixedvec::{alloc_stack, FixedVec};
+
+
+#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct RSDP {
     signature: [u8; 8],
@@ -11,14 +15,14 @@ pub struct RSDP {
     root_sdt_phys_addr: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct RSDT {
     header: ACPISDTHeader,
     other_sdt_ptr: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct ACPISDTHeader {
     signature: [u8; 4],
@@ -32,7 +36,7 @@ pub struct ACPISDTHeader {
     creator_revision: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct MADTIter<'a> {
     madt: &'a MADT,
     pos: usize,
@@ -76,7 +80,7 @@ impl<'a> Iterator for MADTIter<'a>   {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct MADT {
     header: ACPISDTHeader,
@@ -101,14 +105,14 @@ pub enum MADTEntry<'a> {
     OtherEntry(u8),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct MADTEntryHeader {
     typ: u8,
     len: u8
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct APICEntry {
     header: MADTEntryHeader,
@@ -117,7 +121,7 @@ pub struct APICEntry {
     flags: u32
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct IOAPICEntry {
     header: MADTEntryHeader,
@@ -127,7 +131,22 @@ pub struct IOAPICEntry {
     base: u32,
 }
 
-pub(crate) unsafe fn init(phys_mem_offset: u64) {
+// todo support more than 16 apics
+#[derive(Debug)]
+pub struct APICConfig {
+    lapic_addr: PhysAddr,
+    ioapic_addr: PhysAddr,
+    lapic_info: [LAPICInfo; 16]
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct LAPICInfo {
+    processor_id: u8,
+    apic_id: u8,
+    flags: u32,
+}
+
+pub(crate) unsafe fn init(phys_mem_offset: u64) -> APICConfig {
     let rsd = match find_rsd(phys_mem_offset) {
         Some(rsd) => rsd,
         None => panic!("no rsd found")
@@ -136,12 +155,31 @@ pub(crate) unsafe fn init(phys_mem_offset: u64) {
         Some(rsd) => rsd as *const MADT,
         None => panic!("no madt found")
     };
-    writeln!(&mut printer::Printer, "lapic addr: {:x}", (*madt).local_addr);
+    let local_addr = unsafe { (*madt).local_addr};
+    let mut space = alloc_stack!([LAPICInfo; 16]);
+    let mut lapic_info = FixedVec::new(&mut space);
+    let mut ioapic_addr = None;
     for entry in (*madt).iter() {
-        write!(&mut printer::Printer, "apic entry: {:?}", entry);
+        match entry {
+            MADTEntry::APICEntry(entry) => {
+                lapic_info.push(LAPICInfo {
+                    processor_id: entry.processor_id,
+                    apic_id: entry.apic_id,
+                    flags: entry.flags
+                });
+            },
+            MADTEntry::IOAPICEntry(entry) => {
+                ioapic_addr = Some(PhysAddr::new(entry.address.into()));
+            }
+            _ => ()
+        }
     }
-    
-
+    drop(lapic_info);
+    APICConfig {
+        lapic_addr: PhysAddr::new(local_addr.into()),
+        ioapic_addr: ioapic_addr.unwrap(),
+        lapic_info: space
+    }
     
 }
 
@@ -150,7 +188,6 @@ pub(crate) unsafe fn find_rsd_in_range(start: u64, end: u64) -> Option<*const RS
         let rsd = i as *const RSDP;
         let sig: &[u8] = &((*rsd).signature);
         if sig == "RSD PTR ".as_bytes() {
-            write!(&mut printer::Printer, "sig: {}, found: {:?}", core::str::from_utf8_unchecked(sig), *rsd);
             return Some(rsd)
         }
     }

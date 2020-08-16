@@ -14,6 +14,7 @@ use core::convert::TryInto;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::{mem, slice};
+use core::sync::atomic::{Ordering, AtomicU64};
 use fixedvec::alloc_stack;
 use usize_conversions::usize_from;
 use x86_64::instructions::tlb;
@@ -89,6 +90,8 @@ extern "C" {
     fn _smp_trampoline() -> !;
 }
 
+static count: AtomicU64 = AtomicU64::new(0);
+
 #[no_mangle]
 pub unsafe extern "C" fn stage_4() -> ! {
     // Set stack segment
@@ -134,6 +137,7 @@ fn bootloader_main(
     use xmas_elf::program::{ProgramHeader, ProgramHeader64};
 
     printer::Printer.clear_screen();
+    let id = count.fetch_add(1, Ordering::SeqCst);
 
 
 
@@ -285,6 +289,7 @@ fn bootloader_main(
         kernel_start.phys(),
         kernel_stack_address,
         KERNEL_STACK_SIZE,
+        1,
         &segments,
         &mut rec_page_table,
         &mut frame_allocator,
@@ -328,8 +333,9 @@ fn bootloader_main(
             .flush();
         }
 
-        unsafe {rsd::init(physical_memory_offset);}
-        loop {}
+        let apic_info = unsafe {rsd::init(physical_memory_offset)};
+        write!(&mut printer::Printer, "{:?}", apic_info);
+        //loop {}
 
         physical_memory_offset
     };
@@ -372,8 +378,13 @@ fn bootloader_main(
 
     let entry_point = VirtAddr::new(entry_point);
     unsafe {
-        context_switch(boot_info_addr, entry_point, kernel_memory_info.stack_end)
+        //context_switch(boot_info_addr, entry_point, get_stack(kernel_stack_address, id.into()).start_address())
+        context_switch(boot_info_addr, entry_point, get_stack(kernel_stack_address, id).start_address())
     };
+}
+
+fn get_stack(kernel_stack_address: Page, id: u64) -> Page {
+    kernel_stack_address + ((id + 1) * (KERNEL_STACK_SIZE + 1))
 }
 
 fn enable_nxe_bit() {

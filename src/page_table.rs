@@ -31,6 +31,7 @@ pub(crate) fn map_kernel(
     kernel_start: PhysAddr,
     stack_start: Page,
     stack_size: u64,
+    num_stacks: u64,
     segments: &FixedVec<ProgramHeader64>,
     page_table: &mut RecursivePageTable,
     frame_allocator: &mut FrameAllocator,
@@ -45,20 +46,29 @@ pub(crate) fn map_kernel(
         }
     }
 
-    // Create a stack
-    let stack_start = stack_start + 1; // Leave the first page unmapped as a 'guard page'
-    let stack_end = stack_start + stack_size; // stack_size is in pages
+    
+    // Increase by 1 for guard page
+    let stack_size = stack_size + 1;
 
-    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-    let region_type = MemoryRegionType::KernelStack;
+    for i in 0..num_stacks {
+        // Create a stack
+        let curr_stack_start = stack_start + (stack_size * i);
+        let curr_stack_end = stack_start + (stack_size * (i + 1)); // stack_size is in pages
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+        let region_type = MemoryRegionType::KernelStack;
 
-    for page in Page::range(stack_start, stack_end) {
-        let frame = frame_allocator
-            .allocate_frame(region_type)
-            .ok_or(MapToError::FrameAllocationFailed)?;
-        unsafe { map_page(page, frame, flags, page_table, frame_allocator)? }.flush();
+        // Leave the first page unmapped as a 'guard page'
+        for page in Page::range(curr_stack_start + 1, curr_stack_end) {
+            let frame = frame_allocator
+                .allocate_frame(region_type)
+                .ok_or(MapToError::FrameAllocationFailed)?;
+            unsafe { map_page(page, frame, flags, page_table, frame_allocator)? }.flush();
+        }
     }
 
+    
+    let stack_end = stack_start + (stack_size * num_stacks);
+    
     Ok(MemoryInfo {
         stack_end: stack_end.start_address(),
         tls_segment,
