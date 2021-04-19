@@ -333,7 +333,9 @@ where
         pre_release: !env!("CARGO_PKG_VERSION_PRE").is_empty(),
         memory_regions: memory_regions.into(),
         #[cfg(feature = "bios_bin")]
-        smp_trampoline: _smp_trampoline,
+        smp_trampoline: Some(_smp_trampoline),
+        #[cfg(not(feature = "bios_bin"))]
+        smp_trampoline: None,
         framebuffer: mappings
             .framebuffer
             .map(|addr| FrameBuffer {

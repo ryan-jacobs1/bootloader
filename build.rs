@@ -201,7 +201,7 @@ mod binary {
         }
 
         // Parse configuration from the kernel's Cargo.toml
-        let config = match env::var("KERNEL_MANIFEST") {
+        let (config, kernel_ap_entry) = match env::var("KERNEL_MANIFEST") {
             Err(env::VarError::NotPresent) => {
                 panic!("The KERNEL_MANIFEST environment variable must be set for building the bootloader.\n\n\
                  Please use `cargo builder` for building.");
@@ -217,16 +217,16 @@ mod binary {
                     point to a `Cargo.toml`",
                     path,
                 );
-                quote! { compile_error!(#err) }
+                (quote! { compile_error!(#err) }, None)
             }
             Ok(path) if !Path::new(&path).exists() => {
                 let err = format!(
                     "The given `--kernel-manifest` path `{}` does not exist.",
                     path
                 );
-                quote! {
+                (quote! {
                     compile_error!(#err)
-                }
+                }, None)
             }
             Ok(path) => {
                 println!("cargo:rerun-if-changed={}", path);
@@ -253,19 +253,33 @@ mod binary {
                         .cloned()
                         .unwrap_or_else(|| toml::Value::Table(toml::map::Map::new()));
 
-                    config_table
-                        .try_into::<ParsedConfig>()
-                        .map(|c| quote! { #c })
-                        .unwrap_or_else(|err| {
+                    let config_table = config_table.try_into::<ParsedConfig>();
+
+                    match config_table {
+                        Ok(config_table) => {
+                            let kernel_ap_entry = match &config_table.kernel_ap_entry {
+                                Some(kernel_ap_entry) => Some(syn::Ident::new(
+                                    kernel_ap_entry,
+                                    proc_macro2::Span::call_site(),
+                                )),
+                                None => None,
+                            };
+                            (quote! {#config_table}, kernel_ap_entry)
+                        },
+                        Err(err) => {
                             let err = format!(
                                 "failed to parse bootloader config in {}:\n\n{}",
                                 path,
                                 err.to_string()
                             );
-                            quote! {
-                                compile_error!(#err)
-                            }
-                        })
+                            (
+                                quote! {
+                                    compile_error!(#err)
+                                },
+                                None,
+                            )
+                        }
+                    }
                 } else {
                     let err = format!(
                         "no bootloader dependency in {}\n\n  The \
@@ -273,36 +287,40 @@ mod binary {
                     of the kernel.",
                         path
                     );
-                    quote! {
+                    (quote! {
                         compile_error!(#err)
-                    }
+                    }, None)
                 }
             }
         };
 
-        // Write config to file
-        let file_path = out_dir.join("bootloader_config.rs");
-        let mut file = File::create(file_path).expect("failed to create bootloader_config.rs");
-        file.write_all(
-            quote::quote! {
+        let mut parsed_config_output = quote::quote! {
                 mod parsed_config {
                     use crate::config::Config;
                     pub const CONFIG: Config = #config;
-
-                    #[no_mangle]
-                    pub extern "C" kernel_ap_entry_trampoline() -> ! {
-                        match CONFIG.kernel_ap_entry {
-                            Some(entry) => entry(),
-                            None => panic!(),
-                        }
-                    }
                 }
+        }
+        .to_string();
 
+        if let Some(kernel_ap_entry) = kernel_ap_entry {
+            parsed_config_output += &quote::quote! {
+                extern "C" {
+                    fn #kernel_ap_entry() -> !;
+                }
+                    #[no_mangle]
+                pub extern "C" fn kernel_ap_entry_trampoline() -> ! {
+
+                    unsafe {#kernel_ap_entry();}
+                    }
             }
-            .to_string()
-            .as_bytes(),
-        )
-        .expect("write to bootloader_config.rs failed");
+            .to_string();
+        }
+
+        // Write config to file
+        let file_path = out_dir.join("bootloader_config.rs");
+        let mut file = File::create(file_path).expect("failed to create bootloader_config.rs");
+        file.write_all(parsed_config_output.to_string().as_bytes())
+            .expect("write to bootloader_config.rs failed");
 
         println!("cargo:rerun-if-env-changed=KERNEL");
         println!("cargo:rerun-if-env-changed=KERNEL_MANIFEST");
@@ -335,7 +353,7 @@ mod binary {
         pub kernel_stack_address: Option<AlignedAddress>,
         pub boot_info_address: Option<AlignedAddress>,
         pub framebuffer_address: Option<AlignedAddress>,
-        pub kernel_ap_entry: Option<String>
+        pub kernel_ap_entry: Option<String>,
     }
 
     /// Convert to tokens suitable for initializing the `Config` struct.
@@ -354,8 +372,8 @@ mod binary {
             let kernel_stack_address = optional(self.kernel_stack_address);
             let boot_info_address = optional(self.boot_info_address);
             let framebuffer_address = optional(self.framebuffer_address);
-            let kernel_ap_entry = optional(self.kernel_ap_entry);
-            tokens.extend(quote! { Config {
+            tokens.extend(quote! {
+                Config {
                 map_physical_memory: #map_physical_memory,
                 map_page_table_recursively: #map_page_table_recursively,
                 map_framebuffer: #map_framebuffer,
@@ -365,7 +383,6 @@ mod binary {
                 kernel_stack_address: #kernel_stack_address,
                 boot_info_address: #boot_info_address,
                 framebuffer_address: #framebuffer_address,
-                kernel_ap_entry: #kernel_ap_entry,
             }});
         }
     }

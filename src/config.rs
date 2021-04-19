@@ -75,5 +75,4 @@ pub struct Config {
     ///
     /// Only considered if `map_framebuffer` is `true`.
     pub framebuffer_address: Option<u64>,
-    pub kernel_ap_entry: Option<extern "C" fn() -> !>,
 }

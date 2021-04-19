@@ -36,10 +36,9 @@ pub struct BootInfo {
     /// the memory map before passing it to the kernel. Regions marked as usable can be freely
     /// used by the kernel.
     pub memory_regions: MemoryRegions,
-    #[cfg(feature = "bios_bin")]
-    // An SMP compliant trampoline function that will initialize long-mode on the AP,
-    // then jump to user-defined code
-    pub smp_trampoline: unsafe extern "C" fn() -> !,
+    /// An SMP compliant trampoline function that will initialize long-mode on the AP,
+    /// then jump to user-defined code
+    pub smp_trampoline: Option<unsafe extern "C" fn() -> !>,
     /// Information about the framebuffer for screen output if available.
     pub framebuffer: Optional<FrameBuffer>,
     /// The virtual address at which the mapping of the physical memory starts.
