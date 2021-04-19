@@ -26,6 +26,7 @@ global_asm!(include_str!("../asm/stage_2.s"));
 global_asm!(include_str!("../asm/vesa.s"));
 global_asm!(include_str!("../asm/e820.s"));
 global_asm!(include_str!("../asm/stage_3.s"));
+global_asm!(include_str!("../asm/smp_trampoline.s"));
 
 // values defined in `vesa.s`
 extern "C" {

@@ -288,7 +288,16 @@ mod binary {
                 mod parsed_config {
                     use crate::config::Config;
                     pub const CONFIG: Config = #config;
+
+                    #[no_mangle]
+                    pub extern "C" kernel_ap_entry_trampoline() -> ! {
+                        match CONFIG.kernel_ap_entry {
+                            Some(entry) => entry(),
+                            None => panic!(),
+                        }
+                    }
                 }
+
             }
             .to_string()
             .as_bytes(),
@@ -326,6 +335,7 @@ mod binary {
         pub kernel_stack_address: Option<AlignedAddress>,
         pub boot_info_address: Option<AlignedAddress>,
         pub framebuffer_address: Option<AlignedAddress>,
+        pub kernel_ap_entry: Option<String>
     }
 
     /// Convert to tokens suitable for initializing the `Config` struct.
@@ -344,7 +354,7 @@ mod binary {
             let kernel_stack_address = optional(self.kernel_stack_address);
             let boot_info_address = optional(self.boot_info_address);
             let framebuffer_address = optional(self.framebuffer_address);
-
+            let kernel_ap_entry = optional(self.kernel_ap_entry);
             tokens.extend(quote! { Config {
                 map_physical_memory: #map_physical_memory,
                 map_page_table_recursively: #map_page_table_recursively,
@@ -355,6 +365,7 @@ mod binary {
                 kernel_stack_address: #kernel_stack_address,
                 boot_info_address: #boot_info_address,
                 framebuffer_address: #framebuffer_address,
+                kernel_ap_entry: #kernel_ap_entry,
             }});
         }
     }
